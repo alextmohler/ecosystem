@@ -2,12 +2,9 @@
 import math
 import random
 import sys
-import concurrent.futures
-from utils import *
+from utils import * #this is our own utils file
 import os
-
-Executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
-#sys.setrecursionlimit(30) #for troubleshooting the recursion problems
+import socket #for sending it away to be rendered
 
 #the class for the things that Rabbits eat
 class Shrub():
@@ -252,6 +249,7 @@ class Animal():
         #making the animal see
         self.see()
 
+
         #printing stats #FIXME diagnostic
         print("\n" + self.__str__() + " be doing action.")
         print("   " + self.name + "'s objective:", self.objective)
@@ -278,7 +276,7 @@ class Animal():
             if len(self.tasks) > 0:
                 self.Do_Task(tasks.pop[0])
             elif self.objective == "water": #if we want water
-                print("   " + self.name + "'s chosen water:", self.chosen_water) #diagnostic
+                print("   " + self.name + "'s chosen water:", self.chosen_water) #FIXME diagnostic
                 if self.chosen_water == None:
                     self.look_around()
                     self.chosen_water = self.choose_water() #choosing the water to go to. We do this every time so that if there is for some strange reason new water, than we can adjust quickly
@@ -304,7 +302,7 @@ class Animal():
                         if acceptance == True:
                             self.mate = pot_mate #setting our mate to be our potential mate
                             self.mate.mate = self #setting the mate's mate to be self
-                            print(self.mate.__str__() + " accepted mate request from " + self.name)
+                            print(self.mate.__str__() + " accepted mate request from " + self.name) #FIXME diagnostic
 
                 else:
                     #if we are close enough to our mate we reproduce, otherwise we move toward the mate
@@ -325,7 +323,7 @@ class Animal():
                 self.look_around() #we look around for the nearest food
                 self.target = self.choose_prey()
                 if self.target != None:
-                    print(self.name + "'s chosen food:", self.target, "Distance:", find_distance(self.pos, self.target.pos)) #FIXME diagnostic
+                    print(self.name + "'s chosen food:", self.target, "\nDistance:", find_distance(self.pos, self.target.pos)) #FIXME diagnostic
                     self.hunt() #this will deal with everything to do with eating, as most things are fairly animal specific
 
         elif self.hunger > self.thirst and self.hunger > self.hunger_threshold: #if we should be hungry
@@ -360,6 +358,8 @@ class Animal():
         self.thirst += self.thirst_add
         self.arousal += self.arousal_add
         self.age += 1 #how old the Animal is (how many frames it has gone through)
+
+        return [self.__str__(), self.objective, self.target, self.health, self.hunger, self.thirst, self.arousal]
 
     def see(self):
         """the seeing function:
@@ -475,7 +475,7 @@ class Animal():
 
 
     def life_update(self):
-        if self.health =< 0:
+        if self.health <= 0:
             self.Die()
 
     def choose_water(self):
@@ -782,18 +782,58 @@ def main():
     rabbit_female = Rabbit(pos=[22, 22, 1], name="AVA")
     rabbit_female.gender = "female"
    
-    while True:
-        live_animal_list = [] #this is for the population
-        for animal in animal_list: #for all the animals in animal list
-            if animal.alive == True:
-                #input(".")
-                live_animal_list.append(animal) #this is for the population
-                animal.Action() #calling the Animal's action method. This will make it do things
-        print("\nWorld Stats:")
-        print("Population:", len(live_animal_list))
+
+    try:
+        #setting the networking info
+        socket_host = "127.0.0.1"
+        socket_port = 11111
+
+        #connecting
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((socket_host, socket_port)) #initializing the connection
+
+            try:
+                #running the simulation
+                while True:
+                    live_animal_list = [] #this is for the population
+                    for animal in animal_list: #for all the animals in animal list
+                        if animal.alive == True:
+                            #input(".") #this is for if we want a granular approach to what is happening
+                            live_animal_list.append(animal) #this is for the population
+                            stats = animal.Action()
+                            if stats != None:
+                                #making the stats into an easily sendable string "self.__str__(); self.objective; self.target; self.health; self.hunger; self.thirst; self.arousal"
+                                string_stats = stats[0] + "; "+stats[1]+"; "+str(stats[2])+"; "+str(stats[3])+"; "+str(stats[4])+"; "+str(stats[5]) + "; " + str(stats[6])
+                                sock.sendall(string_stats.encode("ascii")) #sending the string
+
+                    #population and such
+                    print("\nWorld Stats:")
+                    print("Population:", len(live_animal_list))
+
+            except KeyboardInterrupt: #if we ctrl+C it
+                sock.sendall("DONE".encode("ascii")) #sending the 'done' code to the server. This will shut it down
+                sock.close() #closing the connection
+                print("Bye.")
+
+    except ConnectionRefusedError: #this will occur if the csharp server is not running
+        print("The Server is not running, so we are defaulting to run the simulation without sending things to the server.")
+        try:
+            #running the sim
+            while True:
+                live_animal_list = [] #this is for the population
+                for animal in animal_list: #for all the animals in animal list
+                    if animal.alive == True:
+                        #input(".") #this is for if we want a granular approach to what is happening
+                        live_animal_list.append(animal) #this is for the population
+                        animal.Action() #calling the animal's action method
+
+                #population and such
+                print("\nWorld Stats:")
+                print("Population:", len(live_animal_list))
+
+        except KeyboardInterrupt:
+            print("Bye.")
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nBye.")
+    main()
